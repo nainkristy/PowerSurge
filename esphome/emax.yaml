@@ -59,7 +59,7 @@ binary_sensor:
 switch:
   - platform: gpio
     id: switch_1
-    name: Relay 1
+    name: "Relay 1"
     pin: P24
 
 status_led:
@@ -73,6 +73,7 @@ substitutions:
   current_multiply: "0.9428028717413666"
 
 sensor:
+    # Current Sensor BL0937
   - platform: hlw8012
     model: BL0937
     cf_pin:
@@ -96,6 +97,8 @@ sensor:
       name: BL0937 Energy
     voltage_divider: ${voltage_divider} #1600
     current_resistor: ${current_resistor} # 0.001 ohm
+
+    # Wi-fi signal
   - platform: wifi_signal
     name: "WiFi Signal Sensor"
     update_interval: 60s
