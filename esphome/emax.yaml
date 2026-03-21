@@ -77,34 +77,4 @@ substitutions:
 
 # TODO: Look into ESPHOME packages to replaces this
 <<: !include common/current_analyzer.yaml
-
-sensor:
-    # Current Sensor BL0937
-  - platform: hlw8012
-    model: BL0937
-    cf_pin:
-      number: P6
-      inverted: true
-    cf1_pin:
-      number: P7
-      inverted: true
-    sel_pin:
-      number: P8
-      inverted: true
-    current:
-      name: BL0937 Current
-      filters:
-      - multiply: ${current_multiply}
-    voltage:
-      name: BL0937 Voltage
-    power:
-      name: BL0937 Power
-    energy:
-      name: BL0937 Energy
-    voltage_divider: ${voltage_divider} #1600
-    current_resistor: ${current_resistor} # 0.001 ohm
-
-    # Wi-fi signal
-  - platform: wifi_signal
-    name: "WiFi Signal Sensor"
-    update_interval: 60s
+<<: !include common/sensors.yaml
