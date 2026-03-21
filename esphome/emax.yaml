@@ -75,6 +75,7 @@ substitutions:
   current_resistor: "0.0009428028717413666"
   current_multiply: "0.9428028717413666"
 
+# TODO: Look into ESPHOME packages to replaces this
 <<: !include common/current_analyzer.yaml
 
 sensor:
