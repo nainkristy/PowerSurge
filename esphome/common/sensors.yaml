@@ -29,3 +29,44 @@ sensor:
     name: "WiFi Signal Sensor"
     update_interval: 60s
 
+    # Sensors for the globals
+  - platform: template
+    name: "Detected Device Type"
+    id: sensor_device_type
+    lambda: 'return id(device_type);'
+    accuracy_decimals: 0
+
+  - platform: template
+    name: "Startup Peak Current"
+    id: sensor_startup_peak
+    unit_of_measurement: "A"
+    lambda: 'return id(startup_peak);'
+    accuracy_decimals: 2
+
+  - platform: template
+    name: "Startup Duration"
+    id: sensor_startup_duration
+    unit_of_measurement: "ms"
+    lambda: 'return (float)id(startup_duration);'
+    accuracy_decimals: 0
+
+  - platform: template
+    name: "Steady State Power"
+    id: sensor_steady_power
+    unit_of_measurement: "W"
+    lambda: 'return id(steady_power);'
+    accuracy_decimals: 1
+
+  - platform: template
+    name: "Current Signal Variance"
+    id: sensor_current_variance
+    unit_of_measurement: "A²"
+    lambda: 'return id(current_variance);'
+    accuracy_decimals: 4
+
+  - platform: template
+    name: "Phantom Power Draw"
+    id: sensor_phantom_power
+    unit_of_measurement: "W"
+    lambda: 'return id(phantom_power);'
+    accuracy_decimals: 2
