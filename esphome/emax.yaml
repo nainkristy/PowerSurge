@@ -72,6 +72,37 @@ substitutions:
   current_resistor: "0.0009428028717413666"
   current_multiply: "0.9428028717413666"
 
+globals:
+    # Device type ID
+  - id: device_type
+    type: int
+    initial_value: '0'
+
+    # Peak current on device startup
+  - id: startup_peak
+    type: float
+    initial_value: '0.0'
+
+    # Duration of starup until current stabilizes
+  - id: startup_duration
+    type: int
+    initial_value: '0'
+
+    # Average current while the device is running
+  - id: steady_power
+    type: float
+    initial_value: '0.0'
+
+    # Current signal variance
+  - id: current_variance
+    type: float
+    initial_value: '0.0'
+
+    # Current used while the device is off
+  - id: phantom_power
+    type: float
+    initial_value: '0.0'
+
 sensor:
     # Current Sensor BL0937
   - platform: hlw8012
