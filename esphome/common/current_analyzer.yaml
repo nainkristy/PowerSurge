@@ -1,0 +1,38 @@
+globals:
+    # Device type ID
+  - id: device_type
+    type: int
+    initial_value: '0'
+
+    # Peak current on device startup
+  - id: startup_peak
+    type: float
+    initial_value: '0.0'
+
+    # Duration of starup until current stabilizes
+  - id: startup_duration
+    type: int
+    initial_value: '0'
+
+    # Average current while the device is running
+  - id: steady_power
+    type: float
+    initial_value: '0.0'
+
+    # Current signal variance
+  - id: current_variance
+    type: float
+    initial_value: '0.0'
+
+    # Current used while the device is off
+  - id: phantom_power
+    type: float
+    initial_value: '0.0'
+
+script:
+  - id: analyze_device
+    mode: restart
+    then:
+      - lambda: |-
+          // Analyzer code
+          ESP_LOGD("SmartPlug", "Starting analysis...");
