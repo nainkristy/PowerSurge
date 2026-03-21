@@ -60,6 +60,10 @@ switch:
     id: switch_1
     name: "Relay 1"
     pin: P24
+    # Run analyze script when the device is powered on
+    on_turn_on:
+      then:
+        - script.execute: analyze_device
 
 status_led:
   pin:
