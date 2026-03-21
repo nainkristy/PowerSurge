@@ -41,6 +41,7 @@ script:
           int samples = 0;
 
           // 1. Capture Inrush (1.5s window)
+          // TODO: Check phantom power and detect when device is actually turned on for devices with a switch
           while (millis() - start_time < 1500) {
             float cur = id(bl0937_current).state;
             if (cur > max_i) max_i = cur;
