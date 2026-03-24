@@ -26,7 +26,7 @@ wifi:
   # Enable fallback hotspot (captive portal) in case wifi connection fails
   ap:
     ssid: "Emax Fallback Hotspot"
-    password: !secret ap_password 
+    password: !secret ap_password
 
 captive_portal:
 
@@ -38,7 +38,6 @@ time:
   - platform: homeassistant
     id: homeassistant_time
 
-
 text_sensor:
   - platform: libretiny
     version:
@@ -48,7 +47,7 @@ binary_sensor:
   - platform: gpio
     id: binary_switch_1
     pin:
-      number: P10
+      number: 6
       inverted: true
       mode: INPUT_PULLUP
     on_press:
@@ -59,22 +58,130 @@ switch:
   - platform: gpio
     id: switch_1
     name: "Relay 1"
-    pin: P24
+    pin: 8
+    #restore_mode: RESTORE_DEFAULT_OFF
     # Run analyze script when the device is powered on
-    on_turn_on:
-      then:
-        - script.execute: analyze_device
+    #on_turn_on:
+    #  then:
+    #    - script.execute: analyze_device
 
 status_led:
   pin:
-    number: P26
+    number: 7
     inverted: true
 
 substitutions:
-  voltage_divider: "912.7644402186831"
-  current_resistor: "0.0009428028717413666"
-  current_multiply: "0.9428028717413666"
+  voltage_divider: "799.1"
+  current_resistor: "0.00256"
+  power_multiply: "2.22652"
 
-# TODO: Look into ESPHOME packages to replaces this
-<<: !include common/current_analyzer.yaml
-<<: !include common/sensors.yaml
+globals:
+    # Device type ID
+  - id: device_type
+    type: int
+    initial_value: '0'
+
+    # Peak current on device startup
+  - id: startup_peak
+    type: float
+    initial_value: '0.0'
+
+    # Duration of starup until current stabilizes
+  - id: startup_duration
+    type: int
+    initial_value: '0'
+
+    # Average current while the device is running
+  - id: steady_power
+    type: float
+    initial_value: '0.0'
+
+    # Current signal variance
+  - id: current_variance
+    type: float
+    initial_value: '0.0'
+
+    # Current used while the device is off
+  - id: phantom_power
+    type: float
+    initial_value: '0.0'
+
+sensor:
+    # Current Sensor BL0937
+  - platform: hlw8012
+    model: BL0937
+    cf_pin:
+      number: P24
+      inverted: true
+    cf1_pin:
+      number: P26
+      inverted: true
+    sel_pin:
+      number: P10
+      inverted: true
+
+    #change_mode_every: 4
+    update_interval: 5s
+
+    current:
+      name: BL0937 Current
+      accuracy_decimals: 3
+    voltage:
+      name: BL0937 Voltage
+      accuracy_decimals: 2
+    power:
+      name: BL0937 Power
+      accuracy_decimals: 2
+      filters:
+        - multiply: ${power_multiply}
+    energy:
+      name: BL0937 Energy
+    voltage_divider: ${voltage_divider}
+    current_resistor: ${current_resistor}
+
+    # Wi-fi signal
+  - platform: wifi_signal
+    name: "WiFi Signal Sensor"
+    update_interval: 60s
+
+    # Sensors for the globals
+  - platform: template
+    name: "Detected Device Type"
+    id: sensor_device_type
+    lambda: 'return id(device_type);'
+    accuracy_decimals: 0
+
+  - platform: template
+    name: "Startup Peak Current"
+    id: sensor_startup_peak
+    unit_of_measurement: "A"
+    lambda: 'return id(startup_peak);'
+    accuracy_decimals: 2
+
+  - platform: template
+    name: "Startup Duration"
+    id: sensor_startup_duration
+    unit_of_measurement: "ms"
+    lambda: 'return (float)id(startup_duration);'
+    accuracy_decimals: 0
+
+  - platform: template
+    name: "Steady State Power"
+    id: sensor_steady_power
+    unit_of_measurement: "W"
+    lambda: 'return id(steady_power);'
+    accuracy_decimals: 1
+
+  - platform: template
+    name: "Current Signal Variance"
+    id: sensor_current_variance
+    unit_of_measurement: "A²"
+    lambda: 'return id(current_variance);'
+    accuracy_decimals: 4
+
+  - platform: template
+    name: "Phantom Power Draw"
+    id: sensor_phantom_power
+    unit_of_measurement: "W"
+    lambda: 'return id(phantom_power);'
+    accuracy_decimals: 2
