@@ -11,6 +11,31 @@ import time
 from datetime import datetime
 import requests
 
+import json
+import re
+
+points = []
+
+def extract_power_from_df(row):
+    """Extract power values and timestamps from the DataFrame."""
+    val = None
+    if row is None:
+        return None
+    try:
+        data = json.loads(row['data'])
+        if data.get('name_id') == 'sensor/BL0937 Power':
+            val = data.get('value')
+            if val is None:
+                state = data.get('state', '')
+                m = re.search(r'([\d\.]+)', state)
+                if m:
+                    val = float(m.group(1))
+                else:
+                    return None
+    except (json.JSONDecodeError, ValueError):
+        print(ValueError)
+        return None
+    return val
 
 def parse_sse_events(response):
     """
@@ -32,16 +57,21 @@ def parse_sse_events(response):
                     continue
                 field_name = field_line[:colon_idx]
                 field_value = field_line[colon_idx+1:].lstrip()
-                if field_name == "event":
-                    event["event_type"] = field_value
+                if field_name == "event" and field_value != "state":
+                    event = None
+                    break
                 elif field_name == "data":
                     event["data"] = field_value
                 elif field_name == "id":
                     event["event_id"] = field_value
                 elif field_name == "retry":
                     event["retry"] = field_value
-            if event:  # ignore empty events
-                yield event
+
+
+            if event is not None:
+                response = extract_power_from_df(event)
+                if response is not None:
+                    yield extract_power_from_df(event)
             buffer = ""
 
 
@@ -57,7 +87,7 @@ def write_header_if_needed(csv_file, filename):
 
     # File is empty or doesn't exist → write header
     writer = csv.writer(csv_file)
-    writer.writerow(['timestamp', 'event_id', 'event_type', 'data'])
+    writer.writerow(['timestamp', 'values'])
     csv_file.flush()
 
 
@@ -84,13 +114,10 @@ def main():
                 response.raise_for_status()
 
                 print("Connected. Reading events...")
-                for event in parse_sse_events(response):
+                for value in parse_sse_events(response):
                     timestamp = datetime.now().isoformat()
-                    event_id = event.get("event_id", "")
-                    event_type = event.get("event_type", "")
-                    data = event.get("data", "")
 
-                    writer.writerow([timestamp, event_id, event_type, data])
+                    writer.writerow([timestamp, value])
                     csvfile.flush()  # ensure data is written to disk
 
             except requests.exceptions.RequestException as e:
