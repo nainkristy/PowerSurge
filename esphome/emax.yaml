@@ -34,6 +34,12 @@ web_server:
   port: 80
   include_internal: true
 
+# HTTP request component for sending data
+http_request:
+  useragent: esphome/emax
+  timeout: 10s
+  verify_ssl: false   # Set to true if using HTTPS with valid certificate
+
 time:
   - platform: homeassistant
     id: homeassistant_time
@@ -125,23 +131,28 @@ sensor:
 
     current:
       name: BL0937 Current
+      id: bl0937_current          # Added ID
       accuracy_decimals: 3
     voltage:
       name: BL0937 Voltage
+      id: bl0937_voltage          # Added ID
       accuracy_decimals: 2
     power:
       name: BL0937 Power
+      id: bl0937_power            # Added ID
       accuracy_decimals: 2
       filters:
         - multiply: ${power_multiply}
     energy:
       name: BL0937 Energy
+      id: bl0937_energy           # Added ID
     voltage_divider: ${voltage_divider}
     current_resistor: ${current_resistor}
 
     # Wi-fi signal
   - platform: wifi_signal
     name: "WiFi Signal Sensor"
+    id: wifi_signal_sensor        # Added ID
     update_interval: 60s
 
     # Sensors for the globals
@@ -185,3 +196,27 @@ sensor:
     unit_of_measurement: "W"
     lambda: 'return id(phantom_power);'
     accuracy_decimals: 2
+
+# Send data every 30 seconds via HTTP POST
+interval:
+  - interval: 30s
+    then:
+      - http_request.post:
+          url: "http://your-server-ip:5000/data"   # <-- CHANGE THIS TO YOUR SERVER ENDPOINT
+          body: !lambda |-
+            return json::dump({
+              {"timestamp", id(homeassistant_time).now().timestamp()},
+              {"current", id(bl0937_current).state},
+              {"voltage", id(bl0937_voltage).state},
+              {"power", id(bl0937_power).state},
+              {"energy", id(bl0937_energy).state},
+              {"wifi_signal", id(wifi_signal_sensor).state},
+              {"device_type", id(device_type)},
+              {"startup_peak", id(startup_peak)},
+              {"startup_duration", id(startup_duration)},
+              {"steady_power", id(steady_power)},
+              {"current_variance", id(current_variance)},
+              {"phantom_power", id(phantom_power)}
+            });
+          headers:
+            Content-Type: application/json
