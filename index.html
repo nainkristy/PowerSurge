@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Power Monitoring Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background: #eaeff2; }
+        .grid-container {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+            max-width: 1200px;
+            margin: auto;
+        }
+        @media (min-width: 900px) {
+            .grid-secondary { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        }
+        .card { background: white; padding: 15px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        h2 { margin-top: 0; color: #2c3e50; font-size: 1.2rem; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        #status { text-align: center; margin-bottom: 15px; font-size: 0.85rem; color: #7f8c8d; }
+    </style>
+</head>
+<body>
+
+    <div id="status">Syncing with sensor_data.csv...</div>
+
+    <div class="grid-container">
+        <div class="card">
+            <h2>Last 60 Minutes (Live)</h2>
+            <canvas id="chartHourly"></canvas>
+        </div>
+
+        <div class="grid-secondary">
+            <div class="card">
+                <h2>Last 24 Hours</h2>
+                <canvas id="chartDaily"></canvas>
+            </div>
+            <div class="card">
+                <h2>Last 3 Days</h2>
+                <canvas id="chart3Days"></canvas>
+            </div>
+        </div>
+    </div>
+
+<script>
+    // Configuration for the charts,use python -m http.server 8000to start a local server and access via http://localhost:8000
+    const chartConfigs = {
+        hourly: { id: 'chartHourly', color: '#3498db', hours: 1 },
+        daily: { id: 'chartDaily', color: '#2ecc71', hours: 24 },
+        threeDays: { id: 'chart3Days', color: '#e67e22', hours: 72 }
+    };
+
+    const charts = {};
+
+    // Initialize all 3 charts
+    Object.keys(chartConfigs).forEach(key => {
+        const conf = chartConfigs[key];
+        const ctx = document.getElementById(conf.id).getContext('2d');
+        charts[key] = new Chart(ctx, {
+            type: 'line',
+            data: { labels: [], datasets: [{ label: 'Power (W)', data: [], borderColor: conf.color, backgroundColor: conf.color + '22', fill: true, borderWidth: 2, pointRadius: 0 }] },
+            options: { responsive: true, animation: false, scales: { y: { beginAtZero: true } } }
+        });
+    });
+
+    async function updateDashboard() {
+        try {
+            const response = await fetch('sensor_data.csv?t=' + Date.now());
+            const csvText = await response.text();
+
+            Papa.parse(csvText, {
+                header: true,
+                dynamicTyping: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    const now = new Date();
+                    const allData = results.data;
+
+                    // Update each chart with filtered data
+                    Object.keys(chartConfigs).forEach(key => {
+                        const hoursLimit = chartConfigs[key].hours;
+                        const cutoff = now.getTime() - (hoursLimit * 60 * 60 * 1000);
+
+                        // Filter data based on timestamp
+                        const filtered = allData.filter(row => {
+                            const tsStr = row.timestamp || row.Timestamp || Object.values(row)[0];
+                            const rowDate = new Date(tsStr);
+                            return rowDate.getTime() > cutoff;
+                        });
+
+                        const labels = filtered.map(row => {
+                            const ts = new Date(row.timestamp || row.Timestamp || Object.values(row)[0]);
+                            // Use shorter time format for hourly, date for longer spans
+                            return hoursLimit <= 1 ? ts.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}) : ts.toLocaleDateString() + ' ' + ts.getHours() + ':00';
+                        });
+
+                        const values = filtered.map(row => row.values || row.Values || Object.values(row)[1]);
+
+                        charts[key].data.labels = labels;
+                        charts[key].data.datasets[0].data = values;
+                        charts[key].update();
+                    });
+
+                    document.getElementById('status').innerText = "Last Updated: " + now.toLocaleTimeString();
+                }
+            });
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    // Refresh every 2 seconds (3 charts are more intensive than 1)
+    setInterval(updateDashboard, 2000);
+    updateDashboard();
+</script>
+</body>
+</html>
