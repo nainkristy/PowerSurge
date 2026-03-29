@@ -2,71 +2,118 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Power Monitoring Dashboard</title>
+    <title>Power & Spot Price Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background: #eaeff2; }
-        .grid-container {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 20px;
-            max-width: 1200px;
-            margin: auto;
-        }
-        @media (min-width: 900px) {
-            .grid-secondary { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        }
+        body { font-family: 'Segoe UI', sans-serif; margin: 20px; background: #f0f2f5; }
+        .grid-container { display: grid; grid-template-columns: 1fr; gap: 20px; max-width: 1200px; margin: auto; }
         .card { background: white; padding: 15px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-        h2 { margin-top: 0; color: #2c3e50; font-size: 1.2rem; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        h2 { margin-top: 0; color: #2c3e50; font-size: 1.1rem; border-bottom: 2px solid #eee; padding-bottom: 10px; }
         #status { text-align: center; margin-bottom: 15px; font-size: 0.85rem; color: #7f8c8d; }
     </style>
 </head>
 <body>
 
-    <div id="status">Syncing with sensor_data.csv...</div>
+    <div id="status">Loading data...</div>
 
     <div class="grid-container">
         <div class="card">
-            <h2>Last 60 Minutes (Live)</h2>
+            <h2>Last 60 Minutes (Power vs Price)</h2>
             <canvas id="chartHourly"></canvas>
         </div>
-
-        <div class="grid-secondary">
-            <div class="card">
-                <h2>Last 24 Hours</h2>
-                <canvas id="chartDaily"></canvas>
-            </div>
-            <div class="card">
-                <h2>Last 3 Days</h2>
-                <canvas id="chart3Days"></canvas>
-            </div>
+        <div class="card">
+            <h2>Last 24 Hours</h2>
+            <canvas id="chartDaily"></canvas>
+        </div>
+        <div class="card">
+            <h2>Last 3 Days</h2>
+            <canvas id="chart3Days"></canvas>
         </div>
     </div>
 
 <script>
-    // Configuration for the charts,use python -m http.server 8000to start a local server and access via http://localhost:8000
+    const charts = {};
     const chartConfigs = {
-        hourly: { id: 'chartHourly', color: '#3498db', hours: 1 },
-        daily: { id: 'chartDaily', color: '#2ecc71', hours: 24 },
-        threeDays: { id: 'chart3Days', color: '#e67e22', hours: 72 }
+        hourly: { id: 'chartHourly', hours: 1 },
+        daily: { id: 'chartDaily', hours: 24 },
+        threeDays: { id: 'chart3Days', hours: 72 }
     };
 
-    const charts = {};
-
-    // Initialize all 3 charts
+    // Initialize Charts with Two Y-Axes,use python -m http.server 8000to start a local server and access via http://localhost:8000
     Object.keys(chartConfigs).forEach(key => {
         const conf = chartConfigs[key];
         const ctx = document.getElementById(conf.id).getContext('2d');
         charts[key] = new Chart(ctx, {
             type: 'line',
-            data: { labels: [], datasets: [{ label: 'Power (W)', data: [], borderColor: conf.color, backgroundColor: conf.color + '22', fill: true, borderWidth: 2, pointRadius: 0 }] },
-            options: { responsive: true, animation: false, scales: { y: { beginAtZero: true } } }
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Power (W)',
+                        data: [],
+                        borderColor: '#3498db',
+                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        yAxisID: 'y',
+                        fill: true
+                    },
+                    {
+                        label: 'Spot Price',
+                        data: [],
+                        borderColor: '#e74c3c',
+                        borderWidth: 2,
+                        borderDash: [5, 5],
+                        pointRadius: 0,
+                        yAxisID: 'y1',
+                        stepped: true // Price stays flat for the hour
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                animation: false,
+                scales: {
+                    y: { type: 'linear', display: true, position: 'left', title: { display: true, text: 'Watts' } },
+                    y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Price' } }
+                }
+            }
         });
     });
 
+    // Helper to parse your specific spot_prices.csv format
+    async function getSpotPrices() {
+        const response = await fetch('spot_prices.csv?t=' + Date.now());
+        const csvText = await response.text();
+        const priceMap = {}; // Key: "YYYY-MM-DD-HH"
+
+        const results = Papa.parse(csvText, { delimiter: ";", skipEmptyLines: true });
+        let lastDate = "";
+        let hourCounter = 0;
+
+        results.data.forEach((row, index) => {
+            if (index === 0) return; // Skip header
+
+            let datePart = row[0] ? row[0].trim() : "";
+            if (datePart !== "") {
+                // Convert DD.MM.YYYY to YYYY-MM-DD
+                const parts = datePart.split('.');
+                lastDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                hourCounter = 0;
+            }
+
+            const price = parseFloat(row[1].replace(',', '.'));
+            // Create a unique key for this specific hour
+            priceMap[`${lastDate}-${hourCounter}`] = price;
+            hourCounter++;
+        });
+        return priceMap;
+    }
+
     async function updateDashboard() {
         try {
+            const priceMap = await getSpotPrices();
             const response = await fetch('sensor_data.csv?t=' + Date.now());
             const csvText = await response.text();
 
@@ -78,41 +125,45 @@
                     const now = new Date();
                     const allData = results.data;
 
-                    // Update each chart with filtered data
                     Object.keys(chartConfigs).forEach(key => {
                         const hoursLimit = chartConfigs[key].hours;
                         const cutoff = now.getTime() - (hoursLimit * 60 * 60 * 1000);
 
-                        // Filter data based on timestamp
                         const filtered = allData.filter(row => {
-                            const tsStr = row.timestamp || row.Timestamp || Object.values(row)[0];
-                            const rowDate = new Date(tsStr);
-                            return rowDate.getTime() > cutoff;
+                            const ts = new Date(row.timestamp || row.Timestamp || Object.values(row)[0]);
+                            return ts.getTime() > cutoff;
                         });
 
                         const labels = filtered.map(row => {
                             const ts = new Date(row.timestamp || row.Timestamp || Object.values(row)[0]);
-                            // Use shorter time format for hourly, date for longer spans
-                            return hoursLimit <= 1 ? ts.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}) : ts.toLocaleDateString() + ' ' + ts.getHours() + ':00';
+                            return hoursLimit <= 1 ? ts.toLocaleTimeString() : ts.toLocaleDateString() + ' ' + ts.getHours() + ':00';
                         });
 
-                        const values = filtered.map(row => row.values || row.Values || Object.values(row)[1]);
+                        const powerValues = filtered.map(row => row.values || row.Values || Object.values(row)[1]);
+
+                        // Map each power timestamp to its corresponding spot price
+                        const priceValues = filtered.map(row => {
+                            const ts = new Date(row.timestamp || row.Timestamp || Object.values(row)[0]);
+                            const dateKey = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, '0')}-${String(ts.getDate()).padStart(2, '0')}-${ts.getHours()}`;
+                            return priceMap[dateKey] || null;
+                        });
 
                         charts[key].data.labels = labels;
-                        charts[key].data.datasets[0].data = values;
+                        charts[key].data.datasets[0].data = powerValues;
+                        charts[key].data.datasets[1].data = priceValues;
                         charts[key].update();
                     });
 
-                    document.getElementById('status').innerText = "Last Updated: " + now.toLocaleTimeString();
+                    document.getElementById('status').innerText = "Dashboard Active • Last Update: " + now.toLocaleTimeString();
                 }
             });
         } catch (e) {
-            console.error(e);
+            console.error("Update Error:", e);
+            document.getElementById('status').innerText = "Error loading files.";
         }
     }
 
-    // Refresh every 2 seconds (3 charts are more intensive than 1)
-    setInterval(updateDashboard, 2000);
+    setInterval(updateDashboard, 5000); // 5 seconds is plenty for two files
     updateDashboard();
 </script>
 </body>
