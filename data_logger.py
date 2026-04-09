@@ -16,26 +16,36 @@ import re
 
 points = []
 
+DATA_TYPES = {
+    "W": 'sensor/Power',
+    'A': 'sensor/Current',
+    'Wh': 'sensor/Energy',
+    'V': 'sensor/Voltage',
+
+}
+
+data_sensor = {
+    'W': 0.0,
+    'Wh': 0.0,
+    'V': 0.0,
+    'A': 0.0,
+}
+
 def extract_power_from_df(row):
     """Extract power values and timestamps from the DataFrame."""
-    val = None
     if row is None:
         return None
     try:
         data = json.loads(row['data'])
-        if data.get('name_id') == 'sensor/BL0937 Power':
-            val = data.get('value')
-            if val is None:
-                state = data.get('state', '')
-                m = re.search(r'([\d\.]+)', state)
-                if m:
-                    val = float(m.group(1))
-                else:
-                    return None
+        for key, sensor_name in DATA_TYPES.items():
+            if data.get("name_id") == sensor_name:
+                data_sensor[key] = float(data.get("value"))
+                return True
+
     except (json.JSONDecodeError, ValueError):
         print(ValueError)
-        return None
-    return val
+        return False
+    return False
 
 def parse_sse_events(response):
     """
@@ -69,9 +79,10 @@ def parse_sse_events(response):
 
 
             if event is not None:
-                response = extract_power_from_df(event)
-                if response is not None:
-                    yield extract_power_from_df(event)
+                print(event)
+                extract_power_from_df(event)
+                if response:
+                    yield True
             buffer = ""
 
 
@@ -87,13 +98,14 @@ def write_header_if_needed(csv_file, filename):
 
     # File is empty or doesn't exist → write header
     writer = csv.writer(csv_file)
-    writer.writerow(['timestamp', 'values'])
+    writer.writerow(['timestamp', 'V', 'A', 'W', 'Wh'])
     csv_file.flush()
 
 
 def main():
-    url = "http://10.48.92.42/events"
-    csv_filename = "sensor_data.csv"
+    url = "http://10.83.141.42/events"
+    device = input("Device: ")
+    csv_filename = "sensor_data_" + device + ".csv"
     reconnect_delay = 5  # seconds to wait before reconnecting
 
     print(f"Starting continuous capture. Press Ctrl+C to stop.")
@@ -114,10 +126,16 @@ def main():
                 response.raise_for_status()
 
                 print("Connected. Reading events...")
-                for value in parse_sse_events(response):
+                for _ in parse_sse_events(response):
                     timestamp = datetime.now().isoformat()
 
-                    writer.writerow([timestamp, value])
+                    writer.writerow([
+                        timestamp,
+                        data_sensor['V'],
+                        data_sensor['A'],
+                        data_sensor['W'],
+                        data_sensor['Wh'],
+                    ])
                     csvfile.flush()  # ensure data is written to disk
 
             except requests.exceptions.RequestException as e:
