@@ -69,4 +69,4 @@ def analyze_power_and_noise(csv_file_path):
     print(f"{'Max Noise (Current Var)':<28} | {max_noise:.6f} A")
 
 # Run the analysis
-analyze_power_and_noise('sensor_data_test.csv')
+analyze_power_and_noise('sensor_data_hair.csv')
