@@ -1,3 +1,7 @@
+# -------------------------------------
+# ESPHome settings
+# -------------------------------------
+
 esphome:
   name: emax
   friendly_name: EMAX
@@ -40,6 +44,15 @@ text_sensor:
     version:
       name: LibreTiny Version
 
+# Use the modified hlw8012 component
+external_components:
+ - source:
+     type: local
+     path: components
+
+# -------------------------------------
+# Outlet components
+# -------------------------------------
 binary_sensor:
   - platform: gpio
     id: binary_switch_1
@@ -67,16 +80,118 @@ status_led:
     number: 7
     inverted: true
 
+
+# -------------------------------------
+# Substitutions
+# -------------------------------------
 substitutions:
-  voltage_divider: "799.1"
-  current_resistor: "0.00256"
-  power_multiply: "2.22652"
+  outlet_power_subtract: 4.82
+  outlet_current_subtract: 0.02
 
-external_components:
- - source:
-     type: local
-     path: components
+# -------------------------------------
+# Globals
+# -------------------------------------
+globals:
+  # Phase tracking
+  - id: device_running
+    type: bool
+    initial_value: "false"
 
+  - id: in_startup
+    type: bool
+    initial_value: "false"
+
+  # Startup tracking
+  - id: startup_max_current
+    type: float
+    initial_value: "0.0"
+
+  # Moving average accumulators (ring-buffer style via exponential moving average)
+  - id: avg_power
+    type: float
+    initial_value: "0.0"
+
+  - id: last_power
+    type: float
+    initial_value: "0.0"
+
+  - id: power_difference
+    type: float
+    initial_value: "0.0"
+
+  - id: avg_current
+    type: float
+    initial_value: "0.0"
+
+  - id: phase_angle
+    type: float
+    initial_value: "0.0"
+
+  - id: phantom_power
+    type: float
+    initial_value: "0.0"
+
+# -------------------------------------
+# Interval: main state machine
+# Runs every 500 ms in sync with sensor updates
+# -------------------------------------
+interval:
+  - interval: 500ms
+    then:
+      - lambda: |-
+          // If outlet is off, dont calculate anything
+          if(!id(switch_1).state)
+            return;
+
+          // EMA alpha — tune for smoothing vs responsiveness
+          // alpha=0.1 → ~10-sample moving average feel
+          const float ALPHA = 0.1f;
+
+          // Stability thresholds
+          const float STABLE_RATIO      = 0.05f;  // current within 5% of max = stable
+          const int   STABLE_TICKS_REQ  = 6;       // 6 × 500 ms = 3 s stable before "running"
+          const float STARTUP_THRESHOLD = 0.05f;   // watts above subtraction → startup trigger
+
+          float p = id(power).state - ${outlet_power_subtract};
+          float c = id(current).state - ${outlet_current_subtract};
+          float v = id(voltage).state;
+
+          // ---- Logic when device is off ----
+          if (!id(device_running)) {
+            if(p > STARTUP_THRESHOLD) {
+              if(!id(in_startup)) {
+                ESP_LOGI("emax", "Startup detected, p=%.2f", p);
+                id(startup_max_current) = p;
+                id(in_startup) = true;
+              }
+
+              else {
+                if(p > id(startup_max_current))
+                  id(startup_max_current) = p;
+                if(id(power_difference) < 0.25*p) {
+                  id(in_startup) = false;
+                  id(device_running) = true;
+                }
+              }
+            }
+          }
+
+          // ---- Logic when device is running ----
+          else {
+            if(p < id(phantom_power)*2 + 1 && p != 0) {
+                ESP_LOGI("emax", "Device turned off p=%.2f", p);
+                id(device_running) = false;
+            }
+          }
+
+          // ---- Phantom power: relay on, power above zero but device not in running/startup ----
+          if (!id(in_startup) && !id(device_running)) {
+            id(phantom_power) = std::max(p, 0.0f);
+          }
+
+# -------------------------------------
+# Sensor
+# -------------------------------------
 sensor:
   - platform: hlw8012
     model: BL0937
@@ -94,17 +209,25 @@ sensor:
     change_mode_every: 8
     current:
       name: Current
+      id: current
       accuracy_decimals: 3
       filters:
         - multiply: 0.39
     voltage:
       name: Voltage
+      id: voltage
       accuracy_decimals: 2
       filters:
         - multiply: 1.15
     power:
       name: Power
+      id: power
       accuracy_decimals: 2
+      on_value:
+        then:
+          - lambda: |-
+              id(power_difference) = std::abs(x - id(last_power));
+              id(last_power) = x;
     energy:
       name: Energy
       accuracy_decimals: 2
@@ -114,3 +237,55 @@ sensor:
   - platform: wifi_signal
     name: "WiFi Signal Sensor"
     update_interval: 60s
+
+    # Analytics sensors
+
+  - platform: template
+    id: sensor_avg_power
+    name: "Average Power"
+    unit_of_measurement: "W"
+    accuracy_decimals: 2
+    icon: "mdi:lightning-bolt"
+    update_interval: 1s
+    lambda: |-
+      return id(avg_power);
+
+  - platform: template
+    id: sensor_avg_current
+    name: "Average Current"
+    unit_of_measurement: "A"
+    accuracy_decimals: 3
+    icon: "mdi:current-ac"
+    update_interval: 1s
+    lambda: |-
+      return id(avg_current);
+
+  - platform: template
+    id: sensor_phase_angle
+    name: "Phase Angle"
+    unit_of_measurement: "°"
+    accuracy_decimals: 1
+    icon: "mdi:angle-acute"
+    update_interval: 1s
+    lambda: |-
+      return id(phase_angle);
+
+  - platform: template
+    id: sensor_phantom_power
+    name: "Phantom Power"
+    unit_of_measurement: "W"
+    accuracy_decimals: 2
+    icon: "mdi:ghost"
+    update_interval: 1s
+    lambda: |-
+      return id(phantom_power);
+
+  - platform: template
+    id: sensor_startup_max_current
+    name: "Startup Peak Current"
+    unit_of_measurement: "A"
+    accuracy_decimals: 3
+    icon: "mdi:flash"
+    update_interval: 8s
+    lambda: |-
+      return id(startup_max_current);
