@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Power & Spot Price Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; margin: 20px; background: #f0f2f5; }
+        .grid-container { display: grid; grid-template-columns: 1fr; gap: 20px; max-width: 1200px; margin: auto; }
+        .card { background: white; padding: 15px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        h2 { margin-top: 0; color: #2c3e50; font-size: 1.1rem; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        #status { text-align: center; margin-bottom: 15px; font-size: 0.85rem; color: #7f8c8d; }
+        
+        /* Upload Area Styling */
+        .upload-section { 
+            max-width: 1200px; 
+            margin: 0 auto 20px auto; 
+            padding: 20px; 
+            background: #fff; 
+            border: 2px dashed #3498db; 
+            border-radius: 10px; 
+            text-align: center; 
+            transition: background 0.3s;
+        }
+        .upload-section.dragover { background: #e1f5fe; }
+        #fileInput { display: none; }
+        .upload-label { cursor: pointer; color: #3498db; font-weight: bold; text-decoration: underline; }
+    </style>
+</head>
+<body>
+
+    <div class="upload-section" id="dropZone">
+        <p>Drag & Drop <strong>sensor_data_mixer_high.csv</strong> here or 
+           <label for="fileInput" class="upload-label">browse</label></p>
+        <input type="file" id="fileInput" accept=".csv">
+    </div>
+
+    <div id="status">Waiting for data...</div>
+
+    <div class="grid-container">
+        <div class="card">
+            <h2>Last 60 Minutes (Power vs Price)</h2>
+            <canvas id="chartHourly"></canvas>
+        </div>
+        <div class="card">
+            <h2>Last 24 Hours</h2>
+            <canvas id="chartDaily"></canvas>
+        </div>
+        <div class="card">
+            <h2>Last 3 Days</h2>
+            <canvas id="chart3Days"></canvas>
+        </div>
+    </div>
+
+<script>
+    const charts = {};
+    const chartConfigs = {
+        hourly: { id: 'chartHourly', hours: 1 },
+        daily: { id: 'chartDaily', hours: 24 },
+        threeDays: { id: 'chart3Days', hours: 72 }
+    };
+
+    // Initialize Charts
+    Object.keys(chartConfigs).forEach(key => {
+        const conf = chartConfigs[key];
+        const ctx = document.getElementById(conf.id).getContext('2d');
+        charts[key] = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Power (W)',
+                        data: [],
+                        borderColor: '#3498db',
+                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        yAxisID: 'y',
+                        fill: true
+                    },
+                    {
+                        label: 'Spot Price',
+                        data: [],
+                        borderColor: '#e74c3c',
+                        borderWidth: 2,
+                        borderDash: [5, 5],
+                        pointRadius: 0,
+                        yAxisID: 'y1',
+                        stepped: 'before' 
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                animation: false,
+                scales: {
+                    y: { type: 'linear', display: true, position: 'left', title: { display: true, text: 'Watts' } },
+                    y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Price' } }
+                }
+            }
+        });
+    });
+
+    async function getSpotPrices() {
+        try {
+            const response = await fetch('spot_prices.csv?t=' + Date.now());
+            if (!response.ok) throw new Error();
+            const csvText = await response.text();
+            const priceMap = {}; 
+
+            const results = Papa.parse(csvText, { delimiter: ";", skipEmptyLines: true });
+            let lastDate = "";
+            let hourCounter = 0;
+
+            results.data.forEach((row, index) => {
+                if (index === 0 || row.length < 2) return; 
+                let datePart = row[0] ? row[0].trim() : "";
+                if (datePart !== "") {
+                    const parts = datePart.split('.');
+                    if(parts.length === 3) {
+                        lastDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                        hourCounter = 0;
+                    }
+                }
+                const price = parseFloat(row[1].toString().replace(',', '.'));
+                priceMap[`${lastDate}-${hourCounter}`] = price;
+                hourCounter++;
+            });
+            return priceMap;
+        } catch (e) {
+            console.warn("Spot prices file not found or invalid. Price data will be empty.");
+            return {};
+        }
+    }
+
+    // Main logic to process data and update charts
+    function processAndDisplay(csvContent, priceMap) {
+        Papa.parse(csvContent, {
+            header: true,
+            dynamicTyping: true,
+            skipEmptyLines: true,
+            complete: function(results) {
+                const now = new Date();
+                const allData = results.data;
+
+                Object.keys(chartConfigs).forEach(key => {
+                    const hoursLimit = chartConfigs[key].hours;
+                    const cutoff = now.getTime() - (hoursLimit * 60 * 60 * 1000);
+
+                    const filtered = allData.filter(row => {
+                        const ts = new Date(row.timestamp);
+                        return ts.getTime() > cutoff;
+                    });
+
+                    const labels = filtered.map(row => {
+                        const ts = new Date(row.timestamp);
+                        return hoursLimit <= 1 
+                            ? ts.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}) 
+                            : (ts.getMonth()+1) + "/" + ts.getDate() + " " + ts.getHours() + ":00";
+                    });
+
+                    const powerValues = filtered.map(row => row.W);
+                    const priceValues = filtered.map(row => {
+                        const ts = new Date(row.timestamp);
+                        const dateKey = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, '0')}-${String(ts.getDate()).padStart(2, '0')}-${ts.getHours()}`;
+                        return priceMap[dateKey] !== undefined ? priceMap[dateKey] : null;
+                    });
+
+                    charts[key].data.labels = labels;
+                    charts[key].data.datasets[0].data = powerValues;
+                    charts[key].data.datasets[1].data = priceValues;
+                    charts[key].update();
+                });
+
+                document.getElementById('status').innerText = "Dashboard Active • Data Refresh: " + new Date().toLocaleTimeString();
+            }
+        });
+    }
+
+    // --- File Handling Logic ---
+
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+
+    // Handle selection via browse button
+    fileInput.addEventListener('change', (e) => {
+        handleFile(e.target.files[0]);
+    });
+
+    // Handle Drag and Drop
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('dragover');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        handleFile(e.dataTransfer.files[0]);
+    });
+
+    async function handleFile(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        const priceMap = await getSpotPrices();
+        
+        reader.onload = (e) => {
+            processAndDisplay(e.target.result, priceMap);
+        };
+        reader.readAsText(file);
+    }
+
+    // Keep the original auto-fetch logic as a fallback
+    /*async function updateDashboard() {
+        try {
+            const priceMap = await getSpotPrices();
+            const response = await fetch('sensor_data_mixer_high.csv?t=' + Date.now());
+            if (response.ok) {
+                const csvText = await response.text();
+                processAndDisplay(csvText, priceMap);
+            }
+        } catch (e) {
+            console.log("Automatic fetch failed, waiting for manual upload.");
+        }
+    }
+
+    setInterval(updateDashboard, 5000);
+    updateDashboard();
+    */
+</script>
+</body>
+</html>

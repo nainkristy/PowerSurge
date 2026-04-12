@@ -1,2 +1,4 @@
 .idea/
 .venv/
+esphome/.esphome/
+esphome/secrets.yaml
