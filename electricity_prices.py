@@ -6,7 +6,7 @@ import logging
 
 # Configure logging
 logging.basicConfig(
-    filename='spot_price_scraper.log',
+    filename='sample_data/spot_price_scraper.log',
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
@@ -47,7 +47,7 @@ def get_prices():
 
             logging.info(f"Found {len(prices)} price entries.")
 
-            csv_file = 'spot_prices.csv'
+            csv_file = 'sample_data/spot_prices.csv'
             clear_csv(csv_file)
             
             # Clear the CSV file and write new data in one operation
