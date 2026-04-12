@@ -1,7 +1,11 @@
 import pandas as pd
 import numpy as np
 
-def analyze_power_and_noise(csv_file_path):
+TRAIN_CSV = 'data_train.csv'
+TRAIN_HEADERS = ['Device', 'Average Power', 'Max Current', 'Cycle Duration',
+                 'Average Phase Angle', 'Average Variation', 'Max Variation']
+
+def analyze_power_and_noise(csv_file_path, device_name):
     # 1. Load the data
     df = pd.read_csv(csv_file_path)
     df['timestamp'] = pd.to_datetime(df['timestamp'])
@@ -68,5 +72,27 @@ def analyze_power_and_noise(csv_file_path):
     print(f"{'Average Noise (Current Var)':<28} | {avg_noise:.6f} A")
     print(f"{'Max Noise (Current Var)':<28} | {max_noise:.6f} A")
 
+    # Save to training CSV
+    new_row = pd.DataFrame([[
+        device_name,
+        round(avg_power, 4),
+        round(max_current, 4),
+        round(cycle_duration, 4),
+        round(avg_phase_angle, 4),
+        round(avg_noise, 6),
+        round(max_noise, 6),
+    ]], columns=TRAIN_HEADERS)
+
+    try:
+        existing = pd.read_csv(TRAIN_CSV)
+        # Fix any header typos on load
+        existing.columns = [c.strip() for c in existing.columns]
+        combined = pd.concat([existing, new_row], ignore_index=True)
+    except FileNotFoundError:
+        combined = new_row
+
+    combined.to_csv(TRAIN_CSV, index=False)
+    print(f"\nSaved to {TRAIN_CSV}")
+
 # Run the analysis
-analyze_power_and_noise('sensor_data_hair.csv')
+analyze_power_and_noise('sensor_data_hair.csv', 'Hair Dryer')
