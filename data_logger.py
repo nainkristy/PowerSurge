@@ -103,7 +103,7 @@ def write_header_if_needed(csv_file, filename):
 
 
 def main():
-    url = "http://10.83.141.42/events"
+    url = "http://10.87.169.42/events"
     device = input("Device: ")
     csv_filename = "sensor_data_" + device + ".csv"
     reconnect_delay = 5  # seconds to wait before reconnecting
