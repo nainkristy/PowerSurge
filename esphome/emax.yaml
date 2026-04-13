@@ -134,80 +134,6 @@ globals:
     initial_value: "0.0"
 
 # -------------------------------------
-# Intervals
-# -------------------------------------
-#  interval:
-#    # Startup and power off detection
-#   - interval: 500ms
-#     then:
-#       - lambda: |-
-#           // If outlet is off, dont calculate anything
-#           if(!id(switch_1).state)
-#             return;
-
-#           float p = id(power).state - ${outlet_power_subtract};
-
-#           // ---- Logic when device is off ----
-#           if (!id(device_running)) {
-#             if(p > ${startuo_threshold}) {
-
-#               // Start startup
-#               if(!id(in_startup)) {
-#                 ESP_LOGI("emax", "Startup detected, p=%.2f", p);
-#                 id(startup_max_current) = p;
-#                 id(in_startup) = true;
-#               }
-
-#               else {
-#                 if(p > id(startup_max_current))
-#                   id(startup_max_current) = p;
-
-#                 // Start running
-#                 if(id(power_difference) < 0.25*p) {
-#                   id(in_startup) = false;
-#                   id(device_running) = true;
-#                   id(avg_power) = p;
-#                   id(avg_current) = id(current).state;
-#                 }
-#               }
-#             }
-#           }
-
-#           // ---- Logic when device is running ----
-#           else {
-#             if(p < id(phantom_power)*2 + 1 && p != 0) {
-#                 ESP_LOGI("emax", "Device turned off p=%.2f", p);
-#                 id(device_running) = false;
-#             }
-#           }
-
-#           // ---- Phantom power: relay on, power above zero but device not in running/startup ----
-#           if (!id(in_startup) && !id(device_running)) {
-#             id(phantom_power) = std::max(p, 0.0f);
-#           }
-
-
-#           if(!id(device_running))
-#             return;
-
-#           id(avg_power)   = ${alpha} * id(power).state + (1.0f - ${alpha}) * id(avg_power);
-#           id(avg_current) = ${alpha} * id(current).state + (1.0f - ${alpha}) * id(avg_current);
-
-  # # Calculation of average power and current
-  # - interval: 1500ms
-  #   then:
-  #     - lambda: |-
-  #         if(!id(device_running))
-  #           return;
-
-  #         // EMA alpha — tune for smoothing vs responsiveness
-  #         // alpha=0.1 → ~10-sample moving average feel
-  #         const float ALPHA = 0.1f;
-
-  #         id(avg_power)   = ALPHA * id(power).state + (1.0f - ALPHA) * id(avg_power);
-  #         id(avg_current) = ALPHA * id(current).state + (1.0f - ALPHA) * id(avg_current);
-
-# -------------------------------------
 # Sensor
 # -------------------------------------
 sensor:
@@ -244,21 +170,21 @@ sensor:
       on_value:
         then:
           - lambda: |-
-              // 1. Guard Clause
               if(!id(switch_1).state) return;
 
               float p =  x - ${outlet_power_subtract};
               float power_difference = std::abs(x - id(last_power));
               id(last_power) = x;
 
-              // 2. Logic when device is OFF
+              // Logic when device is OFF
               if (!id(device_running)) {
                 if(p > ${startup_threshold}) {
                   if(!id(in_startup)) {
                     id(startup_max_current) = p;
                     id(in_startup) = true;
                     ESP_LOGD("emax", "Startup detected");
-                  } else {
+                  }
+                  else {
                     if(p > id(startup_max_current)) id(startup_max_current) = p;
 
                     // Transition to Running
@@ -270,25 +196,23 @@ sensor:
                     }
                   }
                 }
+                //else if (!id(in_startup)) {
+                //  id(phantom_power) = p;
+                //}
               }
-              // 3. Logic when device is RUNNING
+              // Logic when device is RUNNING
               else {
+                // Check if device was powered off
                 if(p < (id(phantom_power) * 2.0f + 1.0f) && p != 0) {
                     id(device_running) = false;
                     ESP_LOGD("emax", "Device stopped");
                 }
+                else {
+                  id(avg_power)   = (${avg_alpha} * x) + (1.0f - ${avg_alpha}) * id(avg_power);
+                  id(avg_current) = (${avg_alpha} * id(current).state) + (1.0f - ${avg_alpha}) * id(avg_current);
+                }
               }
 
-              // 4. EMA calculation (only if running)
-              if(id(device_running)) {
-                id(avg_power)   = (${avg_alpha} * x) + (1.0f - ${avg_alpha}) * id(avg_power);
-                id(avg_current) = (${avg_alpha} * id(current).state) + (1.0f - ${avg_alpha}) * id(avg_current);
-              }
-
-              // 5. Phantom power tracking
-              else if (!id(in_startup)) {
-                id(phantom_power) = p;
-              }
 
     energy:
       name: Energy
@@ -308,7 +232,7 @@ sensor:
     unit_of_measurement: "W"
     accuracy_decimals: 2
     icon: "mdi:lightning-bolt"
-    update_interval: 1s
+    update_interval: 2s
     lambda: |-
       return id(avg_power);
 
@@ -318,19 +242,19 @@ sensor:
     unit_of_measurement: "A"
     accuracy_decimals: 3
     icon: "mdi:current-ac"
-    update_interval: 1s
+    update_interval: 2s
     lambda: |-
       return id(avg_current);
 
-  - platform: template
-    id: sensor_phase_angle
-    name: "Phase Angle"
-    unit_of_measurement: "°"
-    accuracy_decimals: 1
-    icon: "mdi:angle-acute"
-    # update_interval: 1s
-    # lambda: |-
-    #   return id(phase_angle);
+  # - platform: template
+  #   id: sensor_phase_angle
+  #   name: "Phase Angle"
+  #   unit_of_measurement: "°"
+  #   accuracy_decimals: 1
+  #   icon: "mdi:angle-acute"
+  #   update_interval: 5s
+  #   lambda: |-
+  #     return id(avg_current)*id(voltage).state/id(avg_power);
 
   - platform: template
     id: sensor_phantom_power
@@ -338,7 +262,7 @@ sensor:
     unit_of_measurement: "W"
     accuracy_decimals: 2
     icon: "mdi:ghost"
-    update_interval: 1s
+    update_interval: 5s
     lambda: |-
       return id(phantom_power);
 
