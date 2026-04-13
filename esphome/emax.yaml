@@ -133,6 +133,10 @@ globals:
     type: float
     initial_value: "0.0"
 
+  - id: max_variance
+    type: float
+    initial_value: "0.0"
+
 # -------------------------------------
 # Sensor
 # -------------------------------------
@@ -205,11 +209,17 @@ sensor:
                 // Check if device was powered off
                 if(p < (id(phantom_power) * 2.0f + 1.0f) && p != 0) {
                     id(device_running) = false;
+                    id(max_variance) = 0;
                     ESP_LOGD("emax", "Device stopped");
                 }
+                // Calculate EMA averages
                 else {
                   id(avg_power)   = (${avg_alpha} * x) + (1.0f - ${avg_alpha}) * id(avg_power);
                   id(avg_current) = (${avg_alpha} * id(current).state) + (1.0f - ${avg_alpha}) * id(avg_current);
+                }
+                // Calculate max variance
+                if(power_difference > id(max_variance)) {
+                  id(max_variance) = power_difference;
                 }
               }
 
@@ -272,6 +282,16 @@ sensor:
     unit_of_measurement: "A"
     accuracy_decimals: 3
     icon: "mdi:flash"
-    update_interval: 8s
+    update_interval: 5s
     lambda: |-
       return id(startup_max_current);
+
+  - platform: template
+    id: sensor_max_variance
+    name: "Max Power Variance"
+    unit_of_measurement: "W"
+    accuracy_decimals: 3
+    icon: "mdi:trending-up"
+    update_interval: 5s
+    lambda: |-
+      return id(max_variance);
