@@ -27,6 +27,14 @@ wifi:
   password: !secret wifi_password
   fast_connect: true
 
+  manual_ip:
+    # Set this to the IP of the ESP
+    static_ip: 10.87.169.42
+    # Set this to the IP address of the router. Often ends with .1
+    gateway: 127.0.0.1
+    # The subnet of the network. 255.255.255.0 works for most home networks.
+    subnet: 255.255.255.0
+
   # Enable fallback hotspot (captive portal) in case wifi connection fails
   ap:
     ssid: "Emax Fallback Hotspot"
@@ -69,11 +77,13 @@ switch:
     id: switch_1
     name: "Relay 1"
     pin: 8
-    #restore_mode: RESTORE_DEFAULT_OFF
-    # Run analyze script when the device is powered on
-    #on_turn_on:
-    #  then:
-    #    - script.execute: analyze_device
+    on_turn_off:
+          then:
+            - lambda: |-
+                id(device_running) = false;
+                id(in_startup) = false;
+                id(avg_power) = 0.0f;
+                id(avg_current) = 0.0f;
 
 status_led:
   pin:
@@ -87,12 +97,14 @@ status_led:
 substitutions:
   outlet_power_subtract: 4.82
   outlet_current_subtract: 0.02
+  startup_threshold: 0.05
+  # EMA alpha — tune for smoothing vs responsiveness
+  avg_alpha: 0.1
 
 # -------------------------------------
 # Globals
 # -------------------------------------
 globals:
-  # Phase tracking
   - id: device_running
     type: bool
     initial_value: "false"
@@ -101,21 +113,11 @@ globals:
     type: bool
     initial_value: "false"
 
-  # Startup tracking
   - id: startup_max_current
     type: float
     initial_value: "0.0"
 
-  # Moving average accumulators (ring-buffer style via exponential moving average)
   - id: avg_power
-    type: float
-    initial_value: "0.0"
-
-  - id: last_power
-    type: float
-    initial_value: "0.0"
-
-  - id: power_difference
     type: float
     initial_value: "0.0"
 
@@ -123,7 +125,7 @@ globals:
     type: float
     initial_value: "0.0"
 
-  - id: phase_angle
+  - id: last_power
     type: float
     initial_value: "0.0"
 
@@ -132,62 +134,78 @@ globals:
     initial_value: "0.0"
 
 # -------------------------------------
-# Interval: main state machine
-# Runs every 500 ms in sync with sensor updates
+# Intervals
 # -------------------------------------
-interval:
-  - interval: 500ms
-    then:
-      - lambda: |-
-          // If outlet is off, dont calculate anything
-          if(!id(switch_1).state)
-            return;
+#  interval:
+#    # Startup and power off detection
+#   - interval: 500ms
+#     then:
+#       - lambda: |-
+#           // If outlet is off, dont calculate anything
+#           if(!id(switch_1).state)
+#             return;
 
-          // EMA alpha — tune for smoothing vs responsiveness
-          // alpha=0.1 → ~10-sample moving average feel
-          const float ALPHA = 0.1f;
+#           float p = id(power).state - ${outlet_power_subtract};
 
-          // Stability thresholds
-          const float STABLE_RATIO      = 0.05f;  // current within 5% of max = stable
-          const int   STABLE_TICKS_REQ  = 6;       // 6 × 500 ms = 3 s stable before "running"
-          const float STARTUP_THRESHOLD = 0.05f;   // watts above subtraction → startup trigger
+#           // ---- Logic when device is off ----
+#           if (!id(device_running)) {
+#             if(p > ${startuo_threshold}) {
 
-          float p = id(power).state - ${outlet_power_subtract};
-          float c = id(current).state - ${outlet_current_subtract};
-          float v = id(voltage).state;
+#               // Start startup
+#               if(!id(in_startup)) {
+#                 ESP_LOGI("emax", "Startup detected, p=%.2f", p);
+#                 id(startup_max_current) = p;
+#                 id(in_startup) = true;
+#               }
 
-          // ---- Logic when device is off ----
-          if (!id(device_running)) {
-            if(p > STARTUP_THRESHOLD) {
-              if(!id(in_startup)) {
-                ESP_LOGI("emax", "Startup detected, p=%.2f", p);
-                id(startup_max_current) = p;
-                id(in_startup) = true;
-              }
+#               else {
+#                 if(p > id(startup_max_current))
+#                   id(startup_max_current) = p;
 
-              else {
-                if(p > id(startup_max_current))
-                  id(startup_max_current) = p;
-                if(id(power_difference) < 0.25*p) {
-                  id(in_startup) = false;
-                  id(device_running) = true;
-                }
-              }
-            }
-          }
+#                 // Start running
+#                 if(id(power_difference) < 0.25*p) {
+#                   id(in_startup) = false;
+#                   id(device_running) = true;
+#                   id(avg_power) = p;
+#                   id(avg_current) = id(current).state;
+#                 }
+#               }
+#             }
+#           }
 
-          // ---- Logic when device is running ----
-          else {
-            if(p < id(phantom_power)*2 + 1 && p != 0) {
-                ESP_LOGI("emax", "Device turned off p=%.2f", p);
-                id(device_running) = false;
-            }
-          }
+#           // ---- Logic when device is running ----
+#           else {
+#             if(p < id(phantom_power)*2 + 1 && p != 0) {
+#                 ESP_LOGI("emax", "Device turned off p=%.2f", p);
+#                 id(device_running) = false;
+#             }
+#           }
 
-          // ---- Phantom power: relay on, power above zero but device not in running/startup ----
-          if (!id(in_startup) && !id(device_running)) {
-            id(phantom_power) = std::max(p, 0.0f);
-          }
+#           // ---- Phantom power: relay on, power above zero but device not in running/startup ----
+#           if (!id(in_startup) && !id(device_running)) {
+#             id(phantom_power) = std::max(p, 0.0f);
+#           }
+
+
+#           if(!id(device_running))
+#             return;
+
+#           id(avg_power)   = ${alpha} * id(power).state + (1.0f - ${alpha}) * id(avg_power);
+#           id(avg_current) = ${alpha} * id(current).state + (1.0f - ${alpha}) * id(avg_current);
+
+  # # Calculation of average power and current
+  # - interval: 1500ms
+  #   then:
+  #     - lambda: |-
+  #         if(!id(device_running))
+  #           return;
+
+  #         // EMA alpha — tune for smoothing vs responsiveness
+  #         // alpha=0.1 → ~10-sample moving average feel
+  #         const float ALPHA = 0.1f;
+
+  #         id(avg_power)   = ALPHA * id(power).state + (1.0f - ALPHA) * id(avg_power);
+  #         id(avg_current) = ALPHA * id(current).state + (1.0f - ALPHA) * id(avg_current);
 
 # -------------------------------------
 # Sensor
@@ -226,12 +244,56 @@ sensor:
       on_value:
         then:
           - lambda: |-
-              id(power_difference) = std::abs(x - id(last_power));
+              // 1. Guard Clause
+              if(!id(switch_1).state) return;
+
+              float p =  x - ${outlet_power_subtract};
+              float power_difference = std::abs(x - id(last_power));
               id(last_power) = x;
+
+              // 2. Logic when device is OFF
+              if (!id(device_running)) {
+                if(p > ${startup_threshold}) {
+                  if(!id(in_startup)) {
+                    id(startup_max_current) = p;
+                    id(in_startup) = true;
+                    ESP_LOGD("emax", "Startup detected");
+                  } else {
+                    if(p > id(startup_max_current)) id(startup_max_current) = p;
+
+                    // Transition to Running
+                    if(power_difference < (0.25f * p)) {
+                      id(in_startup) = false;
+                      id(device_running) = true;
+                      id(avg_power) = p;
+                      id(avg_current) = id(current).state;
+                    }
+                  }
+                }
+              }
+              // 3. Logic when device is RUNNING
+              else {
+                if(p < (id(phantom_power) * 2.0f + 1.0f) && p != 0) {
+                    id(device_running) = false;
+                    ESP_LOGD("emax", "Device stopped");
+                }
+              }
+
+              // 4. EMA calculation (only if running)
+              if(id(device_running)) {
+                id(avg_power)   = (${avg_alpha} * x) + (1.0f - ${avg_alpha}) * id(avg_power);
+                id(avg_current) = (${avg_alpha} * id(current).state) + (1.0f - ${avg_alpha}) * id(avg_current);
+              }
+
+              // 5. Phantom power tracking
+              else if (!id(in_startup)) {
+                id(phantom_power) = p;
+              }
+
     energy:
       name: Energy
       accuracy_decimals: 2
-    update_interval: 500ms
+    update_interval: 1000ms
 
     # Wi-fi signal
   - platform: wifi_signal
@@ -266,9 +328,9 @@ sensor:
     unit_of_measurement: "°"
     accuracy_decimals: 1
     icon: "mdi:angle-acute"
-    update_interval: 1s
-    lambda: |-
-      return id(phase_angle);
+    # update_interval: 1s
+    # lambda: |-
+    #   return id(phase_angle);
 
   - platform: template
     id: sensor_phantom_power
