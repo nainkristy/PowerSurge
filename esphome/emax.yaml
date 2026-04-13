@@ -85,6 +85,13 @@ switch:
                 id(avg_power) = 0.0f;
                 id(avg_current) = 0.0f;
 
+  - platform: template
+    name: "Emergency Stop"
+    id: emergency_stop_enabled
+    optimistic: true
+    initial_state: true
+    icon: "mdi:shield-check"
+
 status_led:
   pin:
     number: 7
@@ -164,6 +171,8 @@ select:
       - "Lamp"
       - "Unknown"
     initial_option: "Other"
+
+
 # -------------------------------------
 # Sensor
 # -------------------------------------
@@ -203,7 +212,7 @@ sensor:
           - lambda: |-
               if(!id(switch_1).state) return;
               
-              if (x > id(emergency_stop_power).state) {
+              if (id(emergency_stop_enabled).state && x > id(emergency_stop_power).state) {
                 id(switch_1).turn_off();
                 ESP_LOGE("emax", "EMERGENCY STOP: Power %.2fW exceeded limit!", x);
                 return; 
