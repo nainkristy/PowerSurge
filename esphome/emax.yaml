@@ -137,6 +137,17 @@ globals:
     type: float
     initial_value: "0.0"
 
+number:
+  - platform: template
+    name: "Emergency Stop Power"
+    id: emergency_stop_power
+    optimistic: true
+    min_value: 0
+    max_value: 3500
+    step: 10
+    initial_value: 2500
+    unit_of_measurement: "W"
+    mode: BOX # Or SLIDER
 # -------------------------------------
 # Sensor
 # -------------------------------------
@@ -175,6 +186,12 @@ sensor:
         then:
           - lambda: |-
               if(!id(switch_1).state) return;
+              
+              if (x > id(emergency_stop_power).state) {
+                id(switch_1).turn_off();
+                ESP_LOGE("emax", "EMERGENCY STOP: Power %.2fW exceeded limit!", x);
+                return; 
+              }
 
               float p =  x - ${outlet_power_subtract};
               float power_difference = std::abs(x - id(last_power));
