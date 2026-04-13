@@ -148,6 +148,22 @@ number:
     initial_value: 2500
     unit_of_measurement: "W"
     mode: BOX # Or SLIDER
+
+select:
+  - platform: template
+    name: "Device Type"
+    id: device_type
+    optimistic: true
+    options:
+      - "Heater"
+      - "PC"
+      - "Washing Machine"
+      - "Phone Charger"
+      - "Mixer"
+      - "Hair Dryer"
+      - "Lamp"
+      - "Unknown"
+    initial_option: "Other"
 # -------------------------------------
 # Sensor
 # -------------------------------------
