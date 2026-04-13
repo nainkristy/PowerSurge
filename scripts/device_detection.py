@@ -38,7 +38,7 @@ FEATURE_COLS = [
 ]
 LABEL_COL = "Device"
 
-MODEL_DIR      = "saved_model"
+MODEL_DIR      = "../saved_model"
 SCALER_PATH    = os.path.join(MODEL_DIR, "scaler.pkl")
 ENCODER_PATH   = os.path.join(MODEL_DIR, "label_encoder.pkl")
 CLASSES_PATH   = os.path.join(MODEL_DIR, "classes.json")
@@ -253,41 +253,35 @@ def predict(csv_path: str):
 
 # ── Synthetic demo data ───────────────────────────────────────────────────────
 
-def generate_demo_csv(path: str = "demo_data.csv"):
+def generate_demo_csv(path: str = "demo_data.csv", train_csv: str = "data_train.csv", n_per_class: int = 80):
     """
-    Creates a small synthetic dataset so the script can be tested immediately.
-    Replace with real measured data for production use.
+    Creates a synthetic dataset by augmenting real measurements from data_train.csv.
+    For each row in data_train.csv, generates n_per_class samples with small Gaussian noise.
     """
     rng = np.random.default_rng(0)
 
-    # (device, avg_power, max_current, cycle_dur, phase_angle, avg_var, max_var)
-    profiles = {
-        "mixer":         (350,  2.0,  0.5,  15,  0.05, 0.12),
-        "hair_dryer":    (1500, 7.0,  0.2,   5,  0.02, 0.05),
-        "phone_charger": (10,   0.05, 0.01,  2,  0.001,0.003),
-        "fridge":        (150,  0.8,  6.0,  30,  0.01, 0.03),
-        "washing_machine":(800, 4.5,  60.0, 20,  0.08, 0.20),
-        "laptop":        (60,   0.3,  0.05,  3,  0.005,0.010),
-        "led_bulb":      (10,   0.04, 0.02,  1,  0.0005,0.001),
-        "microwave":     (1000, 4.8,  0.3,   2,  0.03, 0.08),
-    }
+    source = pd.read_csv(train_csv)
+    missing = [c for c in FEATURE_COLS + [LABEL_COL] if c not in source.columns]
+    if missing:
+        sys.exit(f"[ERROR] {train_csv} is missing columns: {missing}")
 
     rows = []
-    n_per_class = 80
-    for device, (pw, mc, cd, pa, av, mv) in profiles.items():
+    for _, row in source.iterrows():
         for _ in range(n_per_class):
             rows.append({
-                "Average Power":       max(0, rng.normal(pw, pw * 0.05)),
-                "Max Current":         max(0, rng.normal(mc, mc * 0.05)),
-                "Cycle Duration":      max(0, rng.normal(cd, cd * 0.05)),
-                "Average Phase Angle": rng.normal(pa, pa * 0.05),
-                "Average Variation":   max(0, rng.normal(av, av * 0.1)),
-                "Max Variation":       max(0, rng.normal(mv, mv * 0.1)),
-                "Device":              device,
+                "Average Power":       max(0, rng.normal(row["Average Power"],       abs(row["Average Power"])       * 0.05)),
+                "Max Current":         max(0, rng.normal(row["Max Current"],         abs(row["Max Current"])         * 0.05)),
+                "Cycle Duration":      max(0, rng.normal(row["Cycle Duration"],      abs(row["Cycle Duration"])      * 0.05)),
+                "Average Phase Angle":        rng.normal(row["Average Phase Angle"], abs(row["Average Phase Angle"]) * 0.05),
+                "Average Variation":   max(0, rng.normal(row["Average Variation"],   abs(row["Average Variation"])   * 0.1)),
+                "Max Variation":       max(0, rng.normal(row["Max Variation"],        abs(row["Max Variation"])       * 0.1)),
+                "Device":              row["Device"],
             })
 
-    pd.DataFrame(rows).sample(frac=1, random_state=0).to_csv(path, index=False)
-    print(f"[INFO] Demo CSV created → {path}  ({len(rows)} samples, {len(profiles)} classes)")
+    df_out = pd.DataFrame(rows).sample(frac=1, random_state=0)
+    df_out.to_csv(path, index=False)
+    n_classes = source[LABEL_COL].nunique()
+    print(f"[INFO] Demo CSV created → {path}  ({len(rows)} samples, {n_classes} classes)")
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────

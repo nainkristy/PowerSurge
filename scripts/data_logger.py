@@ -31,7 +31,7 @@ data_sensor = {
     'A': 0.0,
 }
 
-def extract_power_from_df(row):
+def extract_power_from_df(row, data_storage):
     """Extract power values and timestamps from the DataFrame."""
     if row is None:
         return None
@@ -39,7 +39,7 @@ def extract_power_from_df(row):
         data = json.loads(row['data'])
         for key, sensor_name in DATA_TYPES.items():
             if data.get("name_id") == sensor_name:
-                data_sensor[key] = float(data.get("value"))
+                data_storage[key] = float(data.get("value"))
                 return True
 
     except (json.JSONDecodeError, ValueError):
@@ -47,7 +47,7 @@ def extract_power_from_df(row):
         return False
     return False
 
-def parse_sse_events(response):
+def parse_sse_events(response, data_storage):
     """
     Generator that yields parsed SSE events from a streaming response.
     Each event is a dict with keys: event_type, data, event_id, retry.
@@ -80,7 +80,7 @@ def parse_sse_events(response):
 
             if event is not None:
                 print(event)
-                extract_power_from_df(event)
+                extract_power_from_df(event, data_storage)
                 if response:
                     yield True
             buffer = ""
@@ -126,7 +126,7 @@ def main():
                 response.raise_for_status()
 
                 print("Connected. Reading events...")
-                for _ in parse_sse_events(response):
+                for _ in parse_sse_events(response, data_sensor):
                     timestamp = datetime.now().isoformat()
 
                     writer.writerow([

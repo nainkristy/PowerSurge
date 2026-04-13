@@ -95,4 +95,4 @@ def analyze_power_and_noise(csv_file_path, device_name):
     print(f"\nSaved to {TRAIN_CSV}")
 
 # Run the analysis
-analyze_power_and_noise('sample_data/sensor_data_hair.csv', 'Hair Dryer')
+analyze_power_and_noise('sensor_data_predict_test.csv', 'Mixer')

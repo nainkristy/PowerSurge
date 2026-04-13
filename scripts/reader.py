@@ -25,7 +25,7 @@ def update_plot(frame):
 
     try:
         # Read the CSV file (may be open for writing, but that's usually fine)
-        df = pd.read_csv('sample_data/sensor_data_mixer_high.csv')
+        df = pd.read_csv('../sample_data/sensor_data_mixer_high.csv')
     except (FileNotFoundError, pd.errors.EmptyDataError):
         return line,  # file not ready yet
 
