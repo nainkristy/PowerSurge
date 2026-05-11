@@ -44,9 +44,11 @@ Install the requirements:
 pip install -r requirements.txt
 ```
 
-The device running the backend should be on the same network as the outlet.
 Run the backend:
 
 ```py
 python main.py <api_host> [port]
 ```
+
+**! The device running the backend should be on the same network as the outlet.**
+
