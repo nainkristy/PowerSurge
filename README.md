@@ -1,5 +1,7 @@
 # PowerSurge
-Reduce e-waste and power consumption by detecting issues before they happen.
+Reduce e-waste and power consumption by detecting issues before they happen. 
+
+This project was made for the Springineering Challenge at University of Oulu and as a final project for the Hardware Hacking and Reverse Engineering course.
 
 # Introduction
 We are a team of electronics students with an interest in practical applications involving AI and
@@ -18,21 +20,32 @@ We used reverse engineering and consumer-grade smart plugs to create a proof of 
 real life-saving devices, with the use of ESPHome and custom-made software (Python,
 WebApp, C++) and AI, we break limits to implement limits.
 
+# Technical Overview
+
+This is a proof of concept that uses an [EMAX Smart Outlet](https://www.motonet.fi/tuote/emax-alypistorasia-energiankulutusmittarilla?product=95-02136) flashed with [ESPHome](https://esphome.io/) and using a modified sensor component.
+
+TBD
+
 # Running the project
 
 ## Flashing the outlet
 
+TBD
+
 ## Building the ESPHome device
+
+TBD
 
 ## Running the prototype backend
 
-Install the requirements
+Install the requirements:
 
 ```py
 pip install -r requirements.txt
 ```
 
-Run the backend
+The device running the backend should be on the same network as the outlet.
+Run the backend:
 
 ```py
 python main.py <api_host> [port]
