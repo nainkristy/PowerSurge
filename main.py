@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import asyncio
+import sys
+
 from aioesphomeapi import APIClient, SensorState, BinarySensorState, NumberState
 
 import csv_writer
@@ -43,9 +45,9 @@ def get_phase_angle(current, voltage, power):
     return phase_angle
 
 
-async def main():
+async def main(api_host, api_port=6053):
     global device
-    client = APIClient("10.87.169.42", 6053, "")
+    client = APIClient(api_host, api_port, "")
 
     await client.connect(login=True)
 
@@ -111,4 +113,10 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    if len(sys.argv) < 2:
+        print(f"Missing arguments! Usage: python {sys.argv[0]} <api_host> [port]")
+        sys.exit(1)
+
+    host = sys.argv[1]
+    port = int(sys.argv[2]) if len(sys.argv) > 2 else 6053
+    asyncio.run(main(host, port))
