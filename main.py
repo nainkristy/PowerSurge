@@ -28,15 +28,16 @@ command_keys = {}
 
 device = "Unknown"
 
-def get_phase_angle(cur, vol, power):
-    app_pow = cur*vol
-    if app_pow > 0:
+# Calculate the phase angle of the plugged device using the current, voltage, and measured power
+def get_phase_angle(current, voltage, power):
+    apparent_pow = current*voltage
+    if apparent_pow > 0:
         # Power Factor (PF) = cos(theta)
         # Clip PF between -1 and 1 to prevent math domain errors from float precision
-        pf = max(-1.0, min(1.0, power / app_pow))
+        power_factor = max(-1.0, min(1.0, power / apparent_pow))
 
         # Calculate angle in degrees
-        phase_angle = math.degrees(math.acos(pf))
+        phase_angle = math.degrees(math.acos(power_factor))
     else:
         phase_angle = 0.0
     return phase_angle
@@ -51,6 +52,7 @@ async def main():
     entities, services = await client.list_entities_services()
     key_to_name = {}
 
+    # Get api field ids from names
     for entity in entities:
         if entity.name in NAME_TO_INTERNAL:
             key_to_name[entity.key] = NAME_TO_INTERNAL[entity.name]
@@ -61,6 +63,7 @@ async def main():
         # if "device_running" in entity.name.lower() or "Running" in entity.name:
         #     key_to_name[entity.key] = 'device_running'
 
+    # Subscribe to updates from the outlet using the esphome api
     def on_state_update(state):
         if state.key in key_to_name:
             internal_key = key_to_name[state.key]
@@ -70,6 +73,7 @@ async def main():
 
     client.subscribe_states(on_state_update)
 
+    # Main loop checking the values from the shared state that are updated above
     try:
         print("Connected and monitoring...")
         while True:
